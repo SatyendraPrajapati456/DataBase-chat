@@ -4,7 +4,7 @@ const API_URL = 'http://localhost:8000';
 
 const api = axios.create({
     baseURL: API_URL,
-    timeout: 30000,
+    timeout: 60000,
 });
 
 // ── Connection ─────────────────────────────────────────────
