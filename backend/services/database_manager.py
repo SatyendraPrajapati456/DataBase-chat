@@ -194,9 +194,44 @@ class DatabaseManager:
 
     # ── Schema Introspection ─────────────────────────────────
 
+    def _get_all_schemas(self, conn: DatabaseConnection) -> List[str]:
+        """Get all user schemas in the database."""
+        if conn.db_type == "mssql":
+            with conn.engine.connect() as db_conn:
+                result = db_conn.execute(text(
+                    "SELECT schema_name FROM information_schema.schemata "
+                    "WHERE schema_name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest') "
+                    "ORDER BY schema_name"
+                ))
+                return [row[0] for row in result.fetchall()]
+        else:
+            # PostgreSQL / MySQL — use inspector
+            inspector = inspect(conn.engine)
+            try:
+                return inspector.get_schema_names()
+            except Exception:
+                return [None]  # Default schema
+
+    def _qualified_name(self, schema_name: str, table_name: str) -> str:
+        """Build a schema-qualified name like SalesLT.Customer."""
+        if schema_name and schema_name.lower() != "dbo":
+            return f"{schema_name}.{table_name}"
+        return table_name
+
+    def _quote_table(self, conn: DatabaseConnection, full_name: str) -> str:
+        """Quote a table name for SQL queries. Handles schema.table format."""
+        if conn.db_type == "mssql":
+            parts = full_name.split(".", 1)
+            if len(parts) == 2:
+                return f"[{parts[0]}].[{parts[1]}]"
+            return f"[{parts[0]}]"
+        else:
+            return f'"{ full_name}"'
+
     def get_schema(self, db_id: str) -> dict:
         """
         Introspect the database and return full schema information.
+        Scans ALL schemas (dbo, SalesLT, etc.) for SQL Server.
         Returns: {tables: [...], views: [...]}
         Each item has: {name, type, columns: [{name, type, nullable, primary_key}]}
         """
@@ -209,112 +244,136 @@ class DatabaseManager:
         inspector = inspect(conn.engine)
         schema_info = {"tables": [], "views": []}
 
-        # Get tables
-        table_names = inspector.get_table_names()
-        for table_name in table_names:
-            columns = inspector.get_columns(table_name)
-            pk_columns = inspector.get_pk_constraint(table_name)
-            pk_col_names = pk_columns.get("constrained_columns", []) if pk_columns else []
+        # Get all schemas to scan
+        schemas_to_scan = self._get_all_schemas(conn)
 
-            table_info = {
-                "name": table_name,
-                "type": "table",
-                "columns": [
-                    {
-                        "name": col["name"],
-                        "type": str(col["type"]),
-                        "nullable": col.get("nullable", True),
-                        "primary_key": col["name"] in pk_col_names,
-                        "default": str(col["default"]) if col.get("default") else None,
-                    }
-                    for col in columns
-                ],
-            }
-
-            # Try to get row count (quick estimate)
+        for db_schema in schemas_to_scan:
+            # Get tables in this schema
             try:
-                with conn.engine.connect() as db_conn:
-                    # Use approx count for large tables on SQL Server
-                    if conn.db_type == "mssql":
-                        result = db_conn.execute(text(
-                            f"SELECT SUM(rows) FROM sys.partitions "
-                            f"WHERE object_id = OBJECT_ID('{table_name}') AND index_id IN (0, 1)"
-                        ))
-                    else:
-                        result = db_conn.execute(text(
-                            f"SELECT COUNT(*) FROM \"{table_name}\""
-                        ))
-                    row = result.fetchone()
-                    table_info["row_count"] = int(row[0]) if row and row[0] else 0
+                table_names = inspector.get_table_names(schema=db_schema)
             except Exception:
-                table_info["row_count"] = None
+                table_names = []
 
-            schema_info["tables"].append(table_info)
+            for table_name in table_names:
+                try:
+                    columns = inspector.get_columns(table_name, schema=db_schema)
+                    pk_columns = inspector.get_pk_constraint(table_name, schema=db_schema)
+                    pk_col_names = pk_columns.get("constrained_columns", []) if pk_columns else []
 
-        # Get views
-        try:
-            view_names = inspector.get_view_names()
-            for view_name in view_names:
-                columns = inspector.get_columns(view_name)
-                view_info = {
-                    "name": view_name,
-                    "type": "view",
-                    "columns": [
-                        {
-                            "name": col["name"],
-                            "type": str(col["type"]),
-                            "nullable": col.get("nullable", True),
-                            "primary_key": False,
-                            "default": None,
+                    full_name = self._qualified_name(db_schema, table_name)
+
+                    table_info = {
+                        "name": full_name,
+                        "type": "table",
+                        "schema": db_schema,
+                        "columns": [
+                            {
+                                "name": col["name"],
+                                "type": str(col["type"]),
+                                "nullable": col.get("nullable", True),
+                                "primary_key": col["name"] in pk_col_names,
+                                "default": str(col["default"]) if col.get("default") else None,
+                            }
+                            for col in columns
+                        ],
+                    }
+
+                    # Try to get row count
+                    try:
+                        quoted = self._quote_table(conn, full_name)
+                        with conn.engine.connect() as db_conn:
+                            if conn.db_type == "mssql":
+                                result = db_conn.execute(text(
+                                    f"SELECT SUM(rows) FROM sys.partitions "
+                                    f"WHERE object_id = OBJECT_ID('{full_name}') AND index_id IN (0, 1)"
+                                ))
+                            else:
+                                result = db_conn.execute(text(
+                                    f"SELECT COUNT(*) FROM {quoted}"
+                                ))
+                            row = result.fetchone()
+                            table_info["row_count"] = int(row[0]) if row and row[0] else 0
+                    except Exception:
+                        table_info["row_count"] = None
+
+                    schema_info["tables"].append(table_info)
+                except Exception as e:
+                    logger.warning(f"Could not introspect table {db_schema}.{table_name}: {e}")
+
+            # Get views in this schema
+            try:
+                view_names = inspector.get_view_names(schema=db_schema)
+                for view_name in view_names:
+                    try:
+                        columns = inspector.get_columns(view_name, schema=db_schema)
+                        full_name = self._qualified_name(db_schema, view_name)
+                        view_info = {
+                            "name": full_name,
+                            "type": "view",
+                            "schema": db_schema,
+                            "columns": [
+                                {
+                                    "name": col["name"],
+                                    "type": str(col["type"]),
+                                    "nullable": col.get("nullable", True),
+                                    "primary_key": False,
+                                    "default": None,
+                                }
+                                for col in columns
+                            ],
+                            "row_count": None,
                         }
-                        for col in columns
-                    ],
-                    "row_count": None,
-                }
-                schema_info["views"].append(view_info)
-        except Exception as e:
-            logger.warning(f"Could not introspect views for {db_id}: {e}")
+                        schema_info["views"].append(view_info)
+                    except Exception as e:
+                        logger.warning(f"Could not introspect view {db_schema}.{view_name}: {e}")
+            except Exception as e:
+                logger.warning(f"Could not get views for schema {db_schema}: {e}")
 
         # Cache it
         conn._schema_cache = schema_info
         return schema_info
+
+    def _parse_schema_table(self, full_name: str):
+        """Parse 'SalesLT.Customer' into (schema, table). Returns (None, name) if no schema."""
+        parts = full_name.split(".", 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return None, parts[0]
 
     def get_table_preview(
         self, db_id: str, table_name: str, limit: int = 50
     ) -> dict:
         """
         Return a preview of table data (first N rows).
+        table_name can be schema-qualified like 'SalesLT.Customer'.
         Returns: {table_name, columns, column_types, data, total_rows}
         """
         conn = self.get_connection(db_id)
         inspector = inspect(conn.engine)
 
-        # Get column info
-        columns_info = inspector.get_columns(table_name)
+        # Parse schema from table name (e.g. "SalesLT.Customer" → schema="SalesLT", bare="Customer")
+        schema_name, bare_name = self._parse_schema_table(table_name)
+
+        # Get column info with schema
+        columns_info = inspector.get_columns(bare_name, schema=schema_name)
         col_names = [c["name"] for c in columns_info]
         col_types = [str(c["type"]) for c in columns_info]
 
         # Quote table name appropriately
+        quoted_table = self._quote_table(conn, table_name)
+
         if conn.db_type == "mssql":
-            quoted_table = f"[{table_name}]"
             query = f"SELECT TOP {limit} * FROM {quoted_table}"
         else:
-            quoted_table = f'"{table_name}"'
             query = f"SELECT * FROM {quoted_table} LIMIT {limit}"
 
         with conn.engine.connect() as db_conn:
             result = db_conn.execute(text(query))
             rows = result.fetchall()
 
-            # Get total row count
-            if conn.db_type == "mssql":
-                count_result = db_conn.execute(text(
-                    f"SELECT COUNT(*) FROM {quoted_table}"
-                ))
-            else:
-                count_result = db_conn.execute(text(
-                    f"SELECT COUNT(*) FROM {quoted_table}"
-                ))
+            count_result = db_conn.execute(text(
+                f"SELECT COUNT(*) FROM {quoted_table}"
+            ))
             total_rows = count_result.scalar() or 0
 
         # Convert rows to list of dicts, handling non-serializable types
@@ -323,7 +382,6 @@ class DatabaseManager:
             row_dict = {}
             for i, col_name in enumerate(col_names):
                 val = row[i] if i < len(row) else None
-                # Convert non-JSON-serializable types
                 if val is not None:
                     if isinstance(val, (datetime,)):
                         val = val.isoformat()
@@ -447,7 +505,9 @@ class DatabaseManager:
                     col_def += " NOT NULL"
                 cols.append(col_def)
 
-            ddl = f"CREATE {item_type} {item['name']} (\n" + ",\n".join(cols) + "\n);"
+            # Use schema-qualified name in DDL for LLM context
+            qualified = self._quote_table(conn, item['name']) if '.' in item['name'] else item['name']
+            ddl = f"CREATE {item_type} {qualified} (\n" + ",\n".join(cols) + "\n);"
             if item.get("row_count") is not None:
                 ddl += f"\n-- Approximate row count: {item['row_count']}"
             ddl_parts.append(ddl)
