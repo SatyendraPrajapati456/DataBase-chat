@@ -66,6 +66,8 @@ class DatabaseManager:
         password: str,
         encrypt: bool = True,
         trust_server_certificate: bool = False,
+        warehouse: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> str:
         """Build SQLAlchemy connection URL based on provider and db_type."""
 
@@ -74,6 +76,16 @@ class DatabaseManager:
 
         elif db_type == "mysql":
             return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}?charset=utf8mb4"
+
+        elif db_type == "snowflake":
+            params = {}
+            if warehouse:
+                params["warehouse"] = warehouse
+            if role:
+                params["role"] = role
+            from urllib.parse import urlencode
+            qs = f"?{urlencode(params)}" if params else ""
+            return f"snowflake://{username}:{password}@{host}/{database}{qs}"
 
         elif db_type == "mssql":
             # Azure SQL Server / SQL Server via pyodbc
@@ -106,6 +118,8 @@ class DatabaseManager:
         display_name: Optional[str] = None,
         encrypt: bool = True,
         trust_server_certificate: bool = False,
+        warehouse: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> DatabaseConnection:
         """
         Connect to a cloud database and return the DatabaseConnection object.
@@ -113,7 +127,7 @@ class DatabaseManager:
         """
         url = self._build_connection_url(
             provider, db_type, host, port, database, username, password,
-            encrypt, trust_server_certificate
+            encrypt, trust_server_certificate, warehouse, role
         )
 
         engine = create_engine(
@@ -158,11 +172,13 @@ class DatabaseManager:
         password: str,
         encrypt: bool = True,
         trust_server_certificate: bool = False,
+        warehouse: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> bool:
         """Test a database connection without persisting it."""
         url = self._build_connection_url(
             provider, db_type, host, port, database, username, password,
-            encrypt, trust_server_certificate
+            encrypt, trust_server_certificate, warehouse, role
         )
         engine = create_engine(url, pool_pre_ping=True)
         try:
@@ -204,10 +220,13 @@ class DatabaseManager:
                 ))
                 return [row[0] for row in result.fetchall()]
         else:
-            # PostgreSQL / MySQL — use inspector
+            # PostgreSQL / MySQL / Snowflake — use inspector
             inspector = inspect(conn.engine)
             try:
-                return inspector.get_schema_names()
+                schemas = inspector.get_schema_names()
+                if conn.db_type == "snowflake":
+                    schemas = [s for s in schemas if s.upper() not in ('INFORMATION_SCHEMA')]
+                return schemas
             except Exception:
                 return [None]  # Default schema
 
@@ -224,6 +243,11 @@ class DatabaseManager:
             if len(parts) == 2:
                 return f"[{parts[0]}].[{parts[1]}]"
             return f"[{parts[0]}]"
+        elif conn.db_type == "snowflake":
+            parts = full_name.split(".", 1)
+            if len(parts) == 2:
+                return f'"{parts[0]}"."{parts[1]}"'
+            return f'"{parts[0]}"'
         else:
             return f'"{ full_name}"'
 

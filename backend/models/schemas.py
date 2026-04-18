@@ -15,6 +15,9 @@ class CloudConnectRequest(BaseModel):
     # Azure SQL may need these
     encrypt: Optional[bool] = True
     trust_server_certificate: Optional[bool] = False
+    # Snowflake may need these
+    warehouse: Optional[str] = None
+    role: Optional[str] = None
 
 class TestConnectionRequest(BaseModel):
     provider: str
@@ -26,6 +29,8 @@ class TestConnectionRequest(BaseModel):
     password: str
     encrypt: Optional[bool] = True
     trust_server_certificate: Optional[bool] = False
+    warehouse: Optional[str] = None
+    role: Optional[str] = None
 
 # ── Schema Introspection ────────────────────────────────────
 

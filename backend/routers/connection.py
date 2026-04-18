@@ -8,8 +8,8 @@ router = APIRouter(prefix="/connect", tags=["Connection"])
 @router.post("/cloud", response_model=ConnectResponse)
 async def connect_cloud(request: CloudConnectRequest):
     """Connect to a cloud database (Azure SQL, AWS RDS, GCP Cloud SQL)."""
-    valid_providers = ["azure", "aws", "gcp"]
-    valid_db_types = ["postgresql", "mysql", "mssql"]
+    valid_providers = ["azure", "aws", "gcp", "snowflake"]
+    valid_db_types = ["postgresql", "mysql", "mssql", "snowflake"]
 
     if request.provider not in valid_providers:
         raise HTTPException(status_code=400, detail=f"Invalid provider. Must be one of: {valid_providers}")
@@ -28,6 +28,8 @@ async def connect_cloud(request: CloudConnectRequest):
             display_name=request.display_name,
             encrypt=request.encrypt,
             trust_server_certificate=request.trust_server_certificate,
+            warehouse=request.warehouse,
+            role=request.role,
         )
 
         # Get schema right after connecting
@@ -65,6 +67,8 @@ async def test_connection(request: TestConnectionRequest):
             password=request.password,
             encrypt=request.encrypt,
             trust_server_certificate=request.trust_server_certificate,
+            warehouse=request.warehouse,
+            role=request.role,
         )
         return {"status": "success", "message": "Connection successful!"}
     except Exception as e:

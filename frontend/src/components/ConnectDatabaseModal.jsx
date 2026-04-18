@@ -27,12 +27,21 @@ const PROVIDERS = [
         gradient: 'from-[#4285F4] to-[#34A853]',
         dbTypes: ['postgresql', 'mysql', 'mssql'],
     },
+    {
+        id: 'snowflake',
+        name: 'Snowflake',
+        subtitle: 'Data Cloud',
+        color: '#29B5E8',
+        gradient: 'from-[#29B5E8] to-[#008BE1]',
+        dbTypes: ['snowflake'],
+    },
 ];
 
 const DB_TYPES = {
     postgresql: { name: 'PostgreSQL', defaultPort: 5432, color: '#336791' },
     mysql: { name: 'MySQL', defaultPort: 3306, color: '#4479A1' },
     mssql: { name: 'SQL Server', defaultPort: 1433, color: '#CC2927' },
+    snowflake: { name: 'Snowflake', defaultPort: 443, color: '#29B5E8' },
 };
 
 const STEPS = ['Provider', 'Database Type', 'Credentials', 'Connect'];
@@ -50,6 +59,8 @@ const ConnectDatabaseModal = ({ isOpen, onClose, onConnected }) => {
         display_name: '',
         encrypt: true,
         trust_server_certificate: false,
+        warehouse: '',
+        role: '',
     });
     const [showPassword, setShowPassword] = useState(false);
     const [testStatus, setTestStatus] = useState(null); // null | 'testing' | 'success' | 'failed'
@@ -64,6 +75,7 @@ const ConnectDatabaseModal = ({ isOpen, onClose, onConnected }) => {
         setForm({
             host: '', port: '', database: '', username: '', password: '',
             display_name: '', encrypt: true, trust_server_certificate: false,
+            warehouse: '', role: '',
         });
         setShowPassword(false);
         setTestStatus(null);
@@ -105,6 +117,8 @@ const ConnectDatabaseModal = ({ isOpen, onClose, onConnected }) => {
         display_name: form.display_name || undefined,
         encrypt: form.encrypt,
         trust_server_certificate: form.trust_server_certificate,
+        warehouse: form.warehouse || undefined,
+        role: form.role || undefined,
     });
 
     const handleTest = async () => {
@@ -241,7 +255,7 @@ const ConnectDatabaseModal = ({ isOpen, onClose, onConnected }) => {
                                             type="text"
                                             value={form.host}
                                             onChange={e => handleFormChange('host', e.target.value)}
-                                            placeholder="e.g. myserver.database.windows.net"
+                                            placeholder={dbType === 'snowflake' ? "e.g. xy12345.us-east-1.aws" : "e.g. myserver.database.windows.net"}
                                             className="w-full input-field pl-10"
                                         />
                                     </div>
@@ -328,6 +342,32 @@ const ConnectDatabaseModal = ({ isOpen, onClose, onConnected }) => {
                                             Trust Server Certificate
                                         </label>
                                     </div>
+                                )}
+
+                                {/* Snowflake specific options */}
+                                {dbType === 'snowflake' && (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm text-textMuted mb-1.5">Warehouse <span className="text-textMuted/50">(optional)</span></label>
+                                            <input
+                                                type="text"
+                                                value={form.warehouse || ''}
+                                                onChange={e => handleFormChange('warehouse', e.target.value)}
+                                                placeholder="e.g. COMPUTE_WH"
+                                                className="w-full input-field"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm text-textMuted mb-1.5">Role <span className="text-textMuted/50">(optional)</span></label>
+                                            <input
+                                                type="text"
+                                                value={form.role || ''}
+                                                onChange={e => handleFormChange('role', e.target.value)}
+                                                placeholder="e.g. ACCOUNTADMIN"
+                                                className="w-full input-field"
+                                            />
+                                        </div>
+                                    </>
                                 )}
                             </div>
 
