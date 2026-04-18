@@ -85,7 +85,6 @@ class DatabaseManager:
                 f"PWD={password};"
                 f"Encrypt={'yes' if encrypt else 'no'};"
                 f"TrustServerCertificate={'yes' if trust_server_certificate else 'no'};"
-                f"Connection Timeout=30;"
             )
             from urllib.parse import quote_plus
             return f"mssql+pyodbc:///?odbc_connect={quote_plus(params)}"
