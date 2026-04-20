@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { X, Cloud, Database, Server, ArrowRight, ArrowLeft, Loader2, CheckCircle2, AlertCircle, Shield, Eye, EyeOff } from 'lucide-react';
 import { connectCloudDB, testConnection } from '../services/api';
@@ -186,9 +187,8 @@ const ConnectDatabaseModal = ({ isOpen, onClose, onConnected }) => {
                         {STEPS.map((_, i) => (
                             <div
                                 key={i}
-                                className={`h-1 flex-1 rounded-full transition-all duration-500 ${
-                                    i <= step ? 'bg-primary' : 'bg-surfaceHighlight'
-                                }`}
+                                className={`h-1 flex-1 rounded-full transition-all duration-500 ${i <= step ? 'bg-primary' : 'bg-surfaceHighlight'
+                                    }`}
                             />
                         ))}
                     </div>
