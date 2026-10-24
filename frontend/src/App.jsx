@@ -4,6 +4,7 @@ import ChatPanel from './components/ChatPanel';
 import ResultsPanel from './components/ResultsPanel';
 import ConnectDatabaseModal from './components/ConnectDatabaseModal';
 import TablePreviewModal from './components/TablePreviewModal';
+import AISettingsModal, { getStoredAISettings } from './components/AISettingsModal';
 import { disconnectDB, chatWithData } from './services/api';
 
 function App() {
@@ -13,8 +14,21 @@ function App() {
   
   // UI state
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showAISettingsModal, setShowAISettingsModal] = useState(false);
   const [previewTarget, setPreviewTarget] = useState(null); // {dbId, tableName}
   
+  // AI Provider state (loaded from LocalStorage)
+  const [aiConfig, setAiConfig] = useState(() => {
+    const saved = getStoredAISettings();
+    const provider = saved.activeProvider || 'gemini';
+    return {
+      provider,
+      api_key: saved.keys?.[provider] || '',
+      model: saved.models?.[provider] || (provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini'),
+      base_url: saved.baseUrls?.[provider] || undefined,
+    };
+  });
+
   // Chat state
   const [chatHistory, setChatHistory] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -85,7 +99,7 @@ function App() {
     setIsProcessing(true);
 
     try {
-      const response = await chatWithData(userQuery, activeDbId, activeSelected);
+      const response = await chatWithData(userQuery, activeDbId, activeSelected, aiConfig);
       setChatHistory(prev => [...prev, { role: 'bot', text: response.explanation }]);
       setCurrentResult(response);
     } catch (error) {
@@ -94,6 +108,20 @@ function App() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleQuickChangeModel = (newModel) => {
+    setAiConfig(prev => {
+      const updated = { ...prev, model: newModel };
+      try {
+        const saved = getStoredAISettings();
+        saved.models = { ...saved.models, [prev.provider]: newModel };
+        localStorage.setItem('dataChat_ai_settings_v1', JSON.stringify(saved));
+      } catch (e) {
+        console.error("Failed to update active model in storage", e);
+      }
+      return updated;
+    });
   };
 
   const activeDbId = getActiveDatabaseId();
@@ -109,6 +137,8 @@ function App() {
         onPreviewTable={handlePreviewTable}
         onOpenConnectModal={() => setShowConnectModal(true)}
         onDisconnect={handleDisconnect}
+        onOpenAISettings={() => setShowAISettingsModal(true)}
+        activeAIConfig={aiConfig}
       />
       <div className="flex-1 flex flex-col" style={{ width: 'calc(100% - 288px)' }}>
         {/* Active DB indicator bar */}
@@ -132,6 +162,9 @@ function App() {
               history={chatHistory}
               onSendMessage={handleSendMessage}
               isProcessing={isProcessing}
+              activeAIConfig={aiConfig}
+              onOpenAISettings={() => setShowAISettingsModal(true)}
+              onQuickChangeModel={handleQuickChangeModel}
             />
           </div>
           <ResultsPanel currentResult={currentResult} />
@@ -149,6 +182,12 @@ function App() {
         dbId={previewTarget?.dbId}
         tableName={previewTarget?.tableName}
         onClose={() => setPreviewTarget(null)}
+      />
+      <AISettingsModal
+        isOpen={showAISettingsModal}
+        onClose={() => setShowAISettingsModal(false)}
+        onSave={(newCfg) => setAiConfig(newCfg)}
+        activeConfig={aiConfig}
       />
     </div>
   );

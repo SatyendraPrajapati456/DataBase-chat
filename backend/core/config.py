@@ -14,8 +14,12 @@ class Settings(BaseSettings):
     AWS_CONNECTION_STRING: str = os.getenv("AWS_CONNECTION_STRING", "")
     GCP_CONNECTION_STRING: str = os.getenv("GCP_CONNECTION_STRING", "")
     
-    # LLM Settings
+    # LLM & AI Provider Settings
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "gemini")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     
     # Application configuration
     ALLOWED_ORIGINS: list = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174"]

@@ -83,15 +83,38 @@ class TablePreviewResponse(BaseModel):
     data: List[Dict[str, Any]]
     total_rows: int
 
+# ── AI Provider Configuration ──────────────────────────────
+
+class AIProviderConfig(BaseModel):
+    provider: Optional[str] = "gemini"  # gemini, openai, grok, anthropic, deepseek, groq, openrouter, ollama, lmstudio, custom
+    api_key: Optional[str] = None
+    api_keys: Optional[List[str]] = None  # Multiple API keys for rotation & fallback
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+class AITestRequest(BaseModel):
+    provider: str
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+class AITestResponse(BaseModel):
+    success: bool
+    message: str
+    model_used: str
+    latency_ms: Optional[float] = None
+
 # ── Chat ────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     user_query: str
     db_id: str
     selected_tables: List[str]
+    ai_config: Optional[AIProviderConfig] = None
 
 class ChatResponse(BaseModel):
     sql_generated: str
     explanation: str
     data: Dict[str, Any]    # {columns: [...], data: [...]}
     chart_type: str          # "bar" | "line" | "pie" | "table"
+

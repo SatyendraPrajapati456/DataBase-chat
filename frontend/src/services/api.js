@@ -58,13 +58,23 @@ export const refreshSchema = async (dbId) => {
     return response.data;
 };
 
-// ── Chat ───────────────────────────────────────────────────
+// ── Chat & AI ──────────────────────────────────────────────
 
-export const chatWithData = async (userQuery, dbId, selectedTables) => {
-    const response = await api.post('/chat/', {
+export const testAIProvider = async (aiConfig) => {
+    const response = await api.post('/chat/test-ai', aiConfig);
+    return response.data;
+};
+
+export const chatWithData = async (userQuery, dbId, selectedTables, aiConfig = null) => {
+    const payload = {
         user_query: userQuery,
         db_id: dbId,
         selected_tables: selectedTables,
-    });
+    };
+    if (aiConfig) {
+        payload.ai_config = aiConfig;
+    }
+    const response = await api.post('/chat/', payload);
     return response.data;
 };
+
